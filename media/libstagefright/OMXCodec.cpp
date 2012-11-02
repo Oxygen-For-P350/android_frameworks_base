@@ -130,8 +130,7 @@ const int32_t ColorFormatInfo::preferredColorFormat[] = {
 #endif
 #ifdef TARGET7x27
     OMX_QCOM_COLOR_FormatYVU420SemiPlanar,
-    OMX_QCOM_COLOR_FormatYVU420SemiPlanar
-    //QOMX_COLOR_FormatYVU420PackedSemiPlanar32m4ka
+    QOMX_COLOR_FormatYVU420PackedSemiPlanar32m4ka
 #endif
 #ifdef TARGET7x27A
     OMX_QCOM_COLOR_FormatYVU420SemiPlanar,
@@ -499,7 +498,7 @@ uint32_t OMXCodec::getComponentQuirks(
             // the worst/least compression ratio is 0.5. It is found that
             // sometimes, the output buffer size is larger than
             // size advertised by the encoder.
-#if defined(QCOM_LEGACY_OMX) || !defined(QCOM_HARDWARE)
+#ifndef QCOM_HARDWARE
             quirks |= kRequiresLargerEncoderOutputBuffer;
 #endif
         }
@@ -678,11 +677,11 @@ sp<MediaSource> OMXCodec::Create(
 #endif
 		}
         if (softwareCodec != NULL) {
-            LOGE("Successfully allocated software codec '%s'", componentName);
+            LOGI("Successfully allocated software codec '%s'", componentName);
             return softwareCodec;
         }
 
-        LOGE("Attempting to allocate OMX node '%s'", componentName);
+        LOGI("Attempting to allocate OMX node '%s'", componentName);
 
         uint32_t quirks = getComponentQuirks(componentNameBase, createEncoder);
 #ifdef QCOM_HARDWARE
@@ -722,7 +721,7 @@ sp<MediaSource> OMXCodec::Create(
 
         status_t err = omx->allocateNode(componentName, observer, &node);
         if (err == OK) {
-            LOGE("Successfully allocated OMX node '%s'", componentName);
+            LOGI("Successfully allocated OMX node '%s'", componentName);
 
             sp<OMXCodec> codec = new OMXCodec(
                     omx, node, quirks, flags,
@@ -1292,11 +1291,6 @@ static size_t getFrameSize(
 #endif
             return (width * height * 3) / 2;
 
-#ifdef QCOM_LEGACY_OMX
-    case OMX_QCOM_COLOR_FormatYVU420SemiPlanar:
-        return (((width + 15) & -16) * ((height + 15) & -16) * 3) / 2;
-#endif
-
 #ifdef SAMSUNG_CODEC_SUPPORT
     case OMX_SEC_COLOR_FormatNV12LVirtualAddress:
         return ALIGN((ALIGN(width, 16) * ALIGN(height, 16)), 2048) + ALIGN((ALIGN(width, 16) * ALIGN(height >> 1, 8)), 2048);
@@ -1383,7 +1377,6 @@ void OMXCodec::setVideoInputFormat(
     success = success && meta->findInt32(kKeyBitRate, &bitRate);
     success = success && meta->findInt32(kKeyStride, &stride);
     success = success && meta->findInt32(kKeySliceHeight, &sliceHeight);
-    CODEC_LOGI("setVideoInputFormat width=%ld, height=%ld", width, height);
 #ifdef QCOM_HARDWARE
     meta->findInt32(kKeyHFR, &hfr);
 #endif
@@ -1914,7 +1907,7 @@ status_t OMXCodec::setVideoOutputFormat(
         OMX_VIDEO_PARAM_PORTFORMATTYPE format;
         InitOMXParams(&format);
         format.nPortIndex = kPortIndexOutput;
-#if defined(QCOM_HARDWARE) && !defined(QCOM_LEGACY_OMX)
+#ifdef QCOM_HARDWARE
         if (!strncmp(mComponentName, "OMX.qcom",8)) {
             int32_t reqdColorFormat = ColorFormatInfo::getPreferredColorFormat(mOMXLivesLocally);
             for(format.nIndex = 0;
@@ -2066,11 +2059,7 @@ OMXCodec::OMXCodec(
 #endif
       mNativeWindow(
               (!strncmp(componentName, "OMX.google.", 11)
-              || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode")
-#ifdef QCOM_LEGACY_OMX
-              || !strncmp(componentName, "OMX.qcom",8)
-#endif
-      )
+              || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
                         ? NULL : nativeWindow) {
     mPortStatus[kPortIndexInput] = ENABLED;
     mPortStatus[kPortIndexOutput] = ENABLED;
@@ -2257,7 +2246,6 @@ status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
     }
 
     status_t err = OK;
-#ifndef QCOM_LEGACY_OMX
     if ((mFlags & kStoreMetaDataInVideoBuffers)
             && portIndex == kPortIndexInput) {
         LOGW("Trying to enable metadata mode on encoder");
@@ -2267,7 +2255,6 @@ status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
             return err;
         }
     }
-#endif
 
     OMX_PARAM_PORTDEFINITIONTYPE def;
     InitOMXParams(&def);
@@ -2280,7 +2267,7 @@ status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
         return err;
     }
 
-#if defined(QCOM_HARDWARE) && !defined(QCOM_LEGACY_OMX)
+#ifdef QCOM_HARDWARE
     if (mFlags & kUseMinBufferCount) {
         def.nBufferCountActual = def.nBufferCountMin;
         if (!mIsEncoder) {
@@ -5791,12 +5778,6 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
 
             mOutputFormat->setInt32(kKeyWidth, video_def->nFrameWidth);
             mOutputFormat->setInt32(kKeyHeight, video_def->nFrameHeight);
-#ifdef QCOM_LEGACY_OMX
-            // With legacy codec we get wrong color format here
-            if (!strncmp(mComponentName, "OMX.qcom.", 9))
-                mOutputFormat->setInt32(kKeyColorFormat, OMX_QCOM_COLOR_FormatYVU420SemiPlanar);
-            else
-#endif
             mOutputFormat->setInt32(kKeyColorFormat, video_def->eColorFormat);
 
             if (!mIsEncoder) {
